@@ -51,6 +51,7 @@ def create_table(node, table_name, additional_settings):
 
     node.query(create_table_statement)
 
+
 @pytest.mark.parametrize("allow_remote_fs_zero_copy_replication", [False, True])
 def test_create_table(cluster, allow_remote_fs_zero_copy_replication):
     node = cluster.instances["node1"]
