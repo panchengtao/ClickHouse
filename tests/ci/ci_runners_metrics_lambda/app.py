@@ -96,54 +96,6 @@ def get_dead_runners_in_ec2(runners: RunnerDescriptions) -> RunnerDescriptions:
     return result_to_delete
 
 
-def get_lost_ec2_instances(runners: RunnerDescriptions) -> List[dict]:
-    client = boto3.client("ec2")
-    reservations = client.describe_instances(
-        Filters=[
-            {"Name": "tag-key", "Values": ["github:runner-type"]},
-            {"Name": "instance-state-name", "Values": ["pending", "running"]},
-        ],
-    )["Reservations"]
-    # flatten the reservation into instances
-    instances = [
-        instance
-        for reservation in reservations
-        for instance in reservation["Instances"]
-    ]
-    lost_instances = []
-    offline_runner_names = {
-        runner.name for runner in runners if runner.offline and not runner.busy
-    }
-    runner_names = {runner.name for runner in runners}
-    now = datetime.now().timestamp()
-
-    for instance in instances:
-        # Do not consider instances started 20 minutes ago as problematic
-        if now - instance["LaunchTime"].timestamp() < 1200:
-            continue
-
-        runner_type = [
-            tag["Value"]
-            for tag in instance["Tags"]
-            if tag["Key"] == "github:runner-type"
-        ][0]
-        # If there's no necessary labels in runner type it's fine
-        if not (UNIVERSAL_LABEL in runner_type or runner_type in RUNNER_TYPE_LABELS):
-            continue
-
-        if instance["InstanceId"] in offline_runner_names:
-            lost_instances.append(instance)
-            continue
-
-        if (
-            instance["State"]["Name"] == "running"
-            and not instance["InstanceId"] in runner_names
-        ):
-            lost_instances.append(instance)
-
-    return lost_instances
-
-
 def handler(event, context):
     main(get_cached_access_token(), True, True)
 
@@ -263,13 +215,6 @@ def main(
         for runner in dead_runners:
             print("Deleting runner", runner)
             delete_runner(access_token, runner)
-
-        lost_instances = get_lost_ec2_instances(gh_runners)
-        if lost_instances:
-            print("Going to terminate lost runners")
-            ids = [i["InstanceId"] for i in lost_instances]
-            print("Terminating runners:", ids)
-            boto3.client("ec2").terminate_instances(InstanceIds=ids)
 
 
 if __name__ == "__main__":
